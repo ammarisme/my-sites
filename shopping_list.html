@@ -643,6 +643,10 @@
         <div style="font-size: 20px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink);" id="totalLidl">€0.00</div>
       </div>
       <div>
+        <div style="color: var(--muted-2); font-size: 13px; margin-bottom: 4px;">Beno Oy</div>
+        <div style="font-size: 20px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink);" id="totalBeno">€0.00</div>
+      </div>
+      <div>
         <div style="color: var(--muted-2); font-size: 13px; margin-bottom: 4px;">Prisma</div>
         <div style="font-size: 20px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink);" id="totalPrisma">€0.00</div>
       </div>
@@ -680,6 +684,7 @@
           <th data-sort="normalized_price">Normalized <span class="arrow">▼</span></th>
           <th data-sort="online_price">Online now <span class="arrow">▼</span></th>
           <th style="cursor:default; text-align: right;">Lidl</th>
+          <th style="cursor:default; text-align: right;">Beno Oy</th>
           <th style="cursor:default; text-align: right;">Prisma</th>
           <th style="cursor:default; text-align: right;">K-Ruoka</th>
           <th style="cursor:default; text-align: right;">Tokmanni</th>
@@ -727,8 +732,8 @@ const SHOP_BADGE_CLASS = {
 };
 
 const STORAGE_KEY = "fortnightlyShoppingList.selected.v1";
-const COLUMNS_STORAGE_KEY = "fortnightlyShoppingList.columns.v1";
-const COLUMN_WIDTHS_KEY = "fortnightlyShoppingList.columnWidths.v1";
+const COLUMNS_STORAGE_KEY = "fortnightlyShoppingList.columns.v2";
+const COLUMN_WIDTHS_KEY = "fortnightlyShoppingList.columnWidths.v2";
 const FIT_TO_PAGE_KEY = "fortnightlyShoppingList.fitToPage.v1";
 
 // Column configuration: [index, label, default visible]
@@ -746,11 +751,12 @@ const COLUMNS = [
   { index: 11, label: "Normalized", default: true },
   { index: 12, label: "Online now", default: true },
   { index: 13, label: "Lidl", default: true },
-  { index: 14, label: "Prisma", default: true },
-  { index: 15, label: "K-Ruoka", default: true },
-  { index: 16, label: "Tokmanni", default: true },
-  { index: 17, label: "Product", default: true },
-  { index: 18, label: "Notes", default: true }
+  { index: 14, label: "Beno Oy", default: true },
+  { index: 15, label: "Prisma", default: true },
+  { index: 16, label: "K-Ruoka", default: true },
+  { index: 17, label: "Tokmanni", default: true },
+  { index: 18, label: "Product", default: true },
+  { index: 19, label: "Notes", default: true }
 ];
 
 function loadColumnVisibility() {
@@ -863,6 +869,7 @@ function selectedTotalAmount() {
 function calculateShopTotals(rows) {
   const totals = {
     lidl: 0,
+    beno: 0,
     prisma: 0,
     k_ruoka: 0,
     tokmanni: 0,
@@ -873,18 +880,23 @@ function calculateShopTotals(rows) {
     const itemId = Array.isArray(DATA) ? DATA.indexOf(d) : null;
     const research = itemId !== null ? getResearchData(itemId) : null;
 
-    // Lidl price
-    const lidlPrice = typeof d.normalized_price === "number" ? d.normalized_price : 0;
-    if (lidlPrice > 0) totals.lidl += lidlPrice;
+    // Price paid, used as the fallback for shops with no price for this item
+    const paidPrice = typeof d.normalized_price === "number" ? d.normalized_price : 0;
+
+    // Lidl and Beno Oy have no online catalogue, so their price is only known for items bought there
+    const lidlPrice = shopPaidPrice(d, "Lidl") || 0;
+    totals.lidl += lidlPrice || paidPrice;
+    const benoPrice = shopPaidPrice(d, "Beno Oy") || 0;
+    totals.beno += benoPrice || paidPrice;
 
     // Prisma price
     let prismaPrice = 0;
     if (research && research.prisma && typeof research.prisma.price === "number") {
       prismaPrice = research.prisma.price;
       totals.prisma += prismaPrice;
-    } else if (lidlPrice > 0) {
-      prismaPrice = lidlPrice;
-      totals.prisma += lidlPrice; // Fall back to Lidl price if no Prisma data
+    } else if (paidPrice > 0) {
+      prismaPrice = paidPrice;
+      totals.prisma += paidPrice; // Fall back to price paid if no Prisma data
     }
 
     // K-Ruoka price
@@ -892,9 +904,9 @@ function calculateShopTotals(rows) {
     if (research && research.k_ruoka && typeof research.k_ruoka.price === "number") {
       kruokaPrice = research.k_ruoka.price;
       totals.k_ruoka += kruokaPrice;
-    } else if (lidlPrice > 0) {
-      kruokaPrice = lidlPrice;
-      totals.k_ruoka += lidlPrice; // Fall back to Lidl price if no K-Ruoka data
+    } else if (paidPrice > 0) {
+      kruokaPrice = paidPrice;
+      totals.k_ruoka += paidPrice; // Fall back to price paid if no K-Ruoka data
     }
 
     // Tokmanni price
@@ -902,14 +914,14 @@ function calculateShopTotals(rows) {
     if (research && research.tokmanni && typeof research.tokmanni.price === "number") {
       tokmanniPrice = research.tokmanni.price;
       totals.tokmanni += tokmanniPrice;
-    } else if (lidlPrice > 0) {
-      tokmanniPrice = lidlPrice;
-      totals.tokmanni += lidlPrice; // Fall back to Lidl price if no Tokmanni data
+    } else if (paidPrice > 0) {
+      tokmanniPrice = paidPrice;
+      totals.tokmanni += paidPrice; // Fall back to price paid if no Tokmanni data
     }
 
     // Cheapest price
     const prices = [];
-    if (lidlPrice > 0) prices.push(lidlPrice);
+    if (paidPrice > 0) prices.push(paidPrice);
     if (prismaPrice > 0) prices.push(prismaPrice);
     if (kruokaPrice > 0) prices.push(kruokaPrice);
     if (tokmanniPrice > 0) prices.push(tokmanniPrice);
@@ -925,6 +937,7 @@ function calculateShopTotals(rows) {
 function updateShopTotals(rows) {
   const totals = calculateShopTotals(rows);
   document.getElementById("totalLidl").textContent = fmtEur(totals.lidl);
+  document.getElementById("totalBeno").textContent = fmtEur(totals.beno);
   document.getElementById("totalPrisma").textContent = fmtEur(totals.prisma);
   document.getElementById("totalKRuoka").textContent = fmtEur(totals.k_ruoka);
   document.getElementById("totalTokmanni").textContent = fmtEur(totals.tokmanni);
@@ -948,6 +961,15 @@ function itemKey(d) { return d.shop + "::" + d.name_en; }
 function getResearchData(itemId) {
   if (!RESEARCH || !Array.isArray(RESEARCH)) return null;
   return RESEARCH.find(r => r.id === itemId);
+}
+
+function shopPaidPrice(d, shop) {
+  return d.shop === shop && typeof d.normalized_price === "number" ? d.normalized_price : null;
+}
+
+function fmtPaidPrice(d, shop) {
+  const price = shopPaidPrice(d, shop);
+  return price === null ? '<span class="link-muted">–</span>' : `<span class="num">${fmtEur(price)}</span>`;
 }
 
 function getLowestPriceInfo(d, itemId) {
@@ -1030,7 +1052,8 @@ function rowHtml(d) {
   const research = itemId !== null ? getResearchData(itemId) : null;
   const lowestInfo = itemId !== null ? getLowestPriceInfo(d, itemId) : { source: null, price: null, url: null };
 
-  let lidlPrice = `<span class="num">${fmtEur(d.normalized_price)}</span>`;
+  let lidlPrice = fmtPaidPrice(d, "Lidl");
+  let benoPrice = fmtPaidPrice(d, "Beno Oy");
   let prismaPrice = fmtCompetitorPrice(research, "prisma");
   let kruokaPrice = fmtCompetitorPrice(research, "k_ruoka");
   let tokmanniPrice = fmtCompetitorPrice(research, "tokmanni");
@@ -1048,7 +1071,9 @@ function rowHtml(d) {
 
   // Apply green highlight to lowest price
   if (lowestInfo.source === "original") {
-    lidlPrice = `<span class="price-lowest">${fmtEur(lowestInfo.price)} ✓</span>`;
+    const lowest = `<span class="price-lowest">${fmtEur(lowestInfo.price)} ✓</span>`;
+    if (d.shop === "Lidl") lidlPrice = lowest;
+    if (d.shop === "Beno Oy") benoPrice = lowest;
   }
   if (lowestInfo.source === "prisma" && research && research.prisma) {
     if (research.prisma.url) {
@@ -1095,6 +1120,7 @@ function rowHtml(d) {
     <td class="num" title="Normalized for fair comparison (per-kg for produce, per-unit for packaged)">${fmtEur(d.normalized_price)}</td>
     <td>${onlinePrice}</td>
     <td class="price-cell">${lidlPrice}</td>
+    <td class="price-cell">${benoPrice}</td>
     <td class="price-cell">${prismaPrice}</td>
     <td class="price-cell">${kruokaPrice}</td>
     <td class="price-cell">${tokmanniPrice}</td>
