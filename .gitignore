@@ -1,0 +1,4 @@
+# Ignore everything except the shopping list page
+*
+!.gitignore
+!shopping_list.html
